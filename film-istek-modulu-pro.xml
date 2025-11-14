@@ -1,0 +1,1532 @@
+<?xml version="1.0" encoding="utf-8"?>
+<dleplugin>
+	<name>Film İstek Modülü Pro</name>
+	<description>TMDb API ile film ve dizi istekleri. Rate limiting, spam koruması, reCAPTCHA, bekleyen istekler görüntüleme ve admin panel yönetimi dahil.</description>
+	<icon>engine/skins/images/film_icon.png</icon>
+	<version>2.0.0</version>
+	<dleversion>13.0</dleversion>
+	<versioncompare>greater</versioncompare>
+	<upgradeurl></upgradeurl>
+	<filedelete>1</filedelete>
+	<needplugin></needplugin>
+	<mnotice>0</mnotice>
+	<mysqlinstall><![CDATA[CREATE TABLE IF NOT EXISTS `{prefix}_film_requests` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `tmdb_id` int(11) NOT NULL,
+  `imdb_id` varchar(20) NOT NULL DEFAULT '',
+  `type` enum('movie','tv') NOT NULL DEFAULT 'movie',
+  `title` varchar(255) NOT NULL,
+  `original_title` varchar(255) NOT NULL DEFAULT '',
+  `year` int(4) NOT NULL,
+  `poster` varchar(255) NOT NULL DEFAULT '',
+  `backdrop` varchar(255) NOT NULL DEFAULT '',
+  `overview` text NOT NULL,
+  `genres` varchar(255) NOT NULL DEFAULT '',
+  `vote_average` decimal(3,1) NOT NULL DEFAULT '0.0',
+  `status` enum('pending','approved','rejected') NOT NULL DEFAULT 'pending',
+  `added_by` int(11) NOT NULL DEFAULT '0',
+  `username` varchar(100) NOT NULL DEFAULT 'Misafir',
+  `added_at` int(11) NOT NULL,
+  `ip_address` varchar(45) NOT NULL DEFAULT '',
+  `admin_note` text NOT NULL,
+  PRIMARY KEY (`id`),
+  KEY `tmdb_id` (`tmdb_id`),
+  KEY `type` (`type`),
+  KEY `status` (`status`),
+  KEY `added_by` (`added_by`),
+  UNIQUE KEY `unique_request` (`tmdb_id`, `type`)
+) ENGINE=MyISAM DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS `{prefix}_film_request_settings` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `setting_name` varchar(100) NOT NULL,
+  `setting_value` text NOT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `setting_name` (`setting_name`)
+) ENGINE=MyISAM DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS `{prefix}_film_request_limits` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `user_id` int(11) NOT NULL DEFAULT '0',
+  `ip_address` varchar(45) NOT NULL,
+  `request_date` date NOT NULL,
+  `request_count` int(11) NOT NULL DEFAULT '1',
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `unique_limit` (`user_id`, `ip_address`, `request_date`),
+  KEY `request_date` (`request_date`)
+) ENGINE=MyISAM DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+INSERT INTO `{prefix}_film_request_settings` (`setting_name`, `setting_value`) VALUES
+('tmdb_api_key', ''),
+('allow_guests', '1'),
+('notify_admin', '0'),
+('admin_email', ''),
+('items_per_page', '20'),
+('daily_limit', '5'),
+('show_pending_requests', '1')
+ON DUPLICATE KEY UPDATE `setting_value` = `setting_value`;]]></mysqlinstall>
+	<mysqlupgrade><![CDATA[-- Mevcut tabloyu güncelle (eski versiyondan yükseltme)
+ALTER TABLE `{prefix}_film_requests`
+ADD COLUMN IF NOT EXISTS `type` enum('movie','tv') NOT NULL DEFAULT 'movie' AFTER `imdb_id`,
+ADD COLUMN IF NOT EXISTS `backdrop` varchar(255) NOT NULL DEFAULT '' AFTER `poster`,
+ADD COLUMN IF NOT EXISTS `genres` varchar(255) NOT NULL DEFAULT '' AFTER `overview`,
+ADD COLUMN IF NOT EXISTS `vote_average` decimal(3,1) NOT NULL DEFAULT '0.0' AFTER `genres`,
+ADD COLUMN IF NOT EXISTS `ip_address` varchar(45) NOT NULL DEFAULT '' AFTER `added_at`;
+
+-- Unique key ekle (varsa hata vermez)
+ALTER TABLE `{prefix}_film_requests`
+ADD UNIQUE KEY IF NOT EXISTS `unique_request` (`tmdb_id`, `type`);
+
+-- Yeni ayarları ekle
+INSERT INTO `{prefix}_film_request_settings` (`setting_name`, `setting_value`) VALUES
+('daily_limit', '5'),
+('show_pending_requests', '1')
+ON DUPLICATE KEY UPDATE `setting_value` = `setting_value`;
+
+-- Admin sections güncelle
+DELETE FROM `{prefix}_admin_sections` WHERE (name = 'film_requests');]]></mysqlupgrade>
+	<mysqlenable><![CDATA[INSERT INTO `{prefix}_admin_sections` (`name`, `title`, `descr`, `icon`, `allow_groups`) VALUES
+('film_requests', 'Film & Dizi İstekleri', 'Film ve dizi isteklerini yönetin', 'film_icon.png', '1');]]></mysqlenable>
+	<mysqldisable><![CDATA[DELETE FROM `{prefix}_admin_sections` WHERE (name = 'film_requests');]]></mysqldisable>
+	<mysqldelete><![CDATA[DROP TABLE IF EXISTS `{prefix}_film_requests`;
+DROP TABLE IF EXISTS `{prefix}_film_request_settings`;
+DROP TABLE IF EXISTS `{prefix}_film_request_limits`;
+DELETE FROM `{prefix}_admin_sections` WHERE (name = 'film_requests');]]></mysqldelete>
+	<phpinstall><![CDATA[]]></phpinstall>
+	<phpupgrade><![CDATA[]]></phpupgrade>
+	<phpenable><![CDATA[]]></phpenable>
+	<phpdisable><![CDATA[]]></phpdisable>
+	<phpdelete><![CDATA[]]></phpdelete>
+	<notice><![CDATA[<h3>Film İstek Modülü Pro v2.0 Kurulumu Tamamlandı!</h3>
+<p><strong>Yeni Özellikler:</strong></p>
+<ul>
+<li>✅ Film + Dizi desteği</li>
+<li>✅ Günlük 5 istek limiti (spam koruması)</li>
+<li>✅ DLE Captcha/reCAPTCHA entegrasyonu (misafirler için)</li>
+<li>✅ Beklemedeki istekleri görüntüleme</li>
+<li>✅ Mükerrer istek önleme sistemi</li>
+<li>✅ TMDb puan ve tür bilgileri</li>
+<li>✅ Admin notları</li>
+</ul>
+<p><strong>Yapılması Gerekenler:</strong></p>
+<ol>
+<li>Admin Panel → Film & Dizi İstekleri → Ayarlar</li>
+<li>TMDb API Key girin (zorunlu)</li>
+<li>Template dosyasını yerleştirin: <code>templates/Default/film_requests.tpl</code></li>
+<li>Captcha/reCAPTCHA ayarlarını DLE'den yapın: Genel Ayarlar → Güvenlik (isteğe bağlı)</li>
+</ol>
+<p>Modülü kullanmak için: <code>?do=film-requests</code></p>]]></notice>
+	<file name="engine/engine.php">
+		<operation action="after">
+			<searchcode><![CDATA[case "pm" :
+include (DLEPlugins::Check(ENGINE_DIR . '/modules/pm.php'));
+break;]]></searchcode>
+			<replacecode><![CDATA[case "film-requests" :
+include (DLEPlugins::Check(ENGINE_DIR . '/modules/film_requests.php'));
+break;]]></replacecode>
+			<enabled>1</enabled>
+		</operation>
+		<operation action="after">
+			<searchcode><![CDATA[elseif ($do == 'pm') $nam_e = $lang['title_pm'];]]></searchcode>
+			<replacecode><![CDATA[elseif ($do == 'film-requests') $nam_e = 'Film & Dizi İstek Sistemi';]]></replacecode>
+			<enabled>1</enabled>
+		</operation>
+	</file>
+	<file name="engine/modules/film_requests.php">
+		<operation action="create">
+			<replacecode><![CDATA[<?php
+/*
+=====================================================
+ Film İstek Modülü Pro - Frontend
+ DLE 13+ Uyumlu
+ Film + Dizi + Rate Limiting + Spam Protection
+=====================================================
+*/
+
+if(!defined('DATALIFEENGINE')) die("Hacking attempt!");
+
+// Dil dosyası
+$lang_film_requests = array(
+	'page_title' => 'Film & Dizi İstek Sistemi',
+	'search_placeholder' => 'Film/Dizi adı veya IMDb ID',
+	'search_button' => 'Ara',
+	'search_type_movie' => 'Film',
+	'search_type_tv' => 'Dizi',
+	'no_requests' => 'Henüz istek yok',
+	'guest_forbidden' => 'Erişim Engellendi',
+	'guest_forbidden_text' => 'İstek eklemek için giriş yapmalısınız.',
+	'status_pending' => 'Beklemede',
+	'status_approved' => 'Onaylandı',
+	'status_rejected' => 'Reddedildi',
+	'no_api_key' => 'TMDb API Key yapılandırılmamış!',
+	'empty_search' => 'Lütfen bir arama terimi girin!',
+	'api_error' => 'API hatası! Lütfen daha sonra tekrar deneyin.',
+	'no_results' => 'Sonuç bulunamadı!',
+	'already_requested' => 'Bu içerik zaten istek listesinde bekliyor!',
+	'already_approved' => 'Bu içerik daha önce onaylandı!',
+	'request_sent' => 'İsteğiniz başarıyla gönderildi!',
+	'rate_limit' => 'Günlük istek limitiniz doldu! Lütfen yarın tekrar deneyin.',
+	'pending_requests_title' => 'Beklemedeki İstekler',
+	'my_requests_title' => 'Benim İsteklerim'
+);
+
+// Ayarları yükle
+$settings = array();
+$settings_query = $db->query("SELECT setting_name, setting_value FROM " . PREFIX . "_film_request_settings");
+while($row = $db->get_row($settings_query)) {
+	$settings[$row['setting_name']] = $row['setting_value'];
+}
+
+// Misafir kontrolü
+if(!$member_id['user_id'] && $settings['allow_guests'] != '1') {
+	msgbox($lang_film_requests['guest_forbidden'], $lang_film_requests['guest_forbidden_text']);
+	die();
+}
+
+// Rate limit kontrolü fonksiyonu
+function check_rate_limit($db, $member_id, $settings) {
+	$user_id = $member_id['user_id'] ? intval($member_id['user_id']) : 0;
+	$ip_address = $_SERVER['REMOTE_ADDR'];
+	$today = date('Y-m-d');
+	$daily_limit = intval($settings['daily_limit']);
+
+	$check = $db->super_query("SELECT request_count FROM " . PREFIX . "_film_request_limits
+								WHERE user_id = '{$user_id}'
+								AND ip_address = '{$ip_address}'
+								AND request_date = '{$today}'");
+
+	if($check) {
+		if($check['request_count'] >= $daily_limit) {
+			return false;
+		}
+	}
+
+	return true;
+}
+
+// Rate limit güncelle
+function update_rate_limit($db, $member_id) {
+	$user_id = $member_id['user_id'] ? intval($member_id['user_id']) : 0;
+	$ip_address = $_SERVER['REMOTE_ADDR'];
+	$today = date('Y-m-d');
+
+	$db->query("INSERT INTO " . PREFIX . "_film_request_limits (user_id, ip_address, request_date, request_count)
+				VALUES ('{$user_id}', '{$ip_address}', '{$today}', 1)
+				ON DUPLICATE KEY UPDATE request_count = request_count + 1");
+}
+
+// DLE reCAPTCHA/Captcha kontrolü (sadece misafirler için)
+function check_captcha_code($config, $is_recaptcha = false) {
+	if ($is_recaptcha && $config['allow_recaptcha']) {
+		if (isset($_POST['g-recaptcha-response']) && $_POST['g-recaptcha-response']) {
+			require_once ENGINE_DIR . '/classes/recaptcha.php';
+			$reCaptcha = new ReCaptcha($config['recaptcha_private_key']);
+			$resp = $reCaptcha->verifyResponse($_SERVER['REMOTE_ADDR'], $_POST['g-recaptcha-response']);
+
+			if ($resp != null && $resp->success) {
+				return true;
+			}
+		}
+		return false;
+	} else {
+		// Geleneksel captcha kontrolü
+		if (isset($_POST['sec_code']) && isset($_SESSION['sec_code_session']) && $_POST['sec_code'] == $_SESSION['sec_code_session'] && $_SESSION['sec_code_session']) {
+			return true;
+		}
+		return false;
+	}
+}
+
+$captcha_error = '';
+$stop = "";
+
+// Film/Dizi İstek Ekleme İşlemi
+if(isset($_POST['add_request']) && $_POST['add_request'] == 'submit') {
+
+	// Misafir kullanıcılar için captcha kontrolü
+	if(!$member_id['user_id']) {
+		$captcha_valid = check_captcha_code($config, $config['allow_recaptcha']);
+		if(!$captcha_valid) {
+			$_SESSION['sec_code_session'] = false;
+			msgbox($lang['all_err_1'], 'Güvenlik doğrulaması başarısız! Lütfen captcha kodunu doğru girin.');
+			die();
+		}
+		$_SESSION['sec_code_session'] = false; // Captcha'yı sıfırla
+	}
+
+	if(!check_rate_limit($db, $member_id, $settings)) {
+		msgbox($lang['all_err_1'], $lang_film_requests['rate_limit']);
+	} else {
+
+		$tmdb_id = isset($_POST['tmdb_id']) ? intval($_POST['tmdb_id']) : 0;
+		$content_type = isset($_POST['content_type']) && $_POST['content_type'] == 'tv' ? 'tv' : 'movie';
+		$title = isset($_POST['title']) ? $db->safesql(trim($_POST['title'])) : '';
+		$original_title = isset($_POST['original_title']) ? $db->safesql(trim($_POST['original_title'])) : '';
+		$year = isset($_POST['year']) ? intval($_POST['year']) : 0;
+		$poster = isset($_POST['poster']) ? $db->safesql(trim($_POST['poster'])) : '';
+		$backdrop = isset($_POST['backdrop']) ? $db->safesql(trim($_POST['backdrop'])) : '';
+		$overview = isset($_POST['overview']) ? $db->safesql(trim($_POST['overview'])) : '';
+		$genres = isset($_POST['genres']) ? $db->safesql(trim($_POST['genres'])) : '';
+		$vote_average = isset($_POST['vote_average']) ? floatval($_POST['vote_average']) : 0;
+
+		if($tmdb_id && !empty($title)) {
+			$check = $db->super_query("SELECT id, status FROM " . PREFIX . "_film_requests
+										WHERE tmdb_id = '" . $tmdb_id . "'
+										AND type = '{$content_type}'");
+
+			if($check) {
+				if($check['status'] == 'approved') {
+					msgbox($lang['all_err_1'], $lang_film_requests['already_approved']);
+				} else {
+					msgbox($lang['all_info'], $lang_film_requests['already_requested']);
+				}
+			} else {
+				$username = $member_id['user_id'] ? $db->safesql($member_id['name']) : 'Misafir';
+				$user_id = $member_id['user_id'] ? intval($member_id['user_id']) : 0;
+				$ip_address = $_SERVER['REMOTE_ADDR'];
+
+				$db->query("INSERT INTO " . PREFIX . "_film_requests
+							(tmdb_id, type, title, original_title, year, poster, backdrop, overview, genres, vote_average, added_by, username, added_at, ip_address, status)
+							VALUES ('{$tmdb_id}', '{$content_type}', '{$title}', '{$original_title}', '{$year}', '{$poster}', '{$backdrop}', '{$overview}', '{$genres}', '{$vote_average}', '{$user_id}', '{$username}', '" . time() . "', '{$ip_address}', 'pending')");
+
+				update_rate_limit($db, $member_id);
+
+				if($settings['notify_admin'] == '1' && !empty($settings['admin_email'])) {
+					$type_text = $content_type == 'tv' ? 'Dizi' : 'Film';
+					$message = "Yeni bir {$type_text} isteği eklendi:\n\n";
+					$message .= "{$type_text}: {$title} ({$year})\n";
+					$message .= "Ekleyen: {$username}\n";
+					$message .= "Tarih: " . date('d.m.Y H:i') . "\n\n";
+					$message .= "Admin panelden kontrol edebilirsiniz.";
+
+					@mail($settings['admin_email'], "Yeni {$type_text} İsteği - " . $config['home_title'], $message, "From: noreply@" . $_SERVER['HTTP_HOST']);
+				}
+
+				msgbox($lang['all_info'], $lang_film_requests['request_sent'], "?do=film-requests");
+			}
+		}
+	}
+}
+
+$search_type = isset($_POST['search_type']) ? $_POST['search_type'] : 'movie';
+
+// Film/Dizi Arama İşlemi
+$search_results = '';
+$search_message = '';
+
+if(isset($_POST['search_film']) && $_POST['search_film'] == 'submit') {
+	$query = isset($_POST['query']) ? trim($_POST['query']) : '';
+
+	// Misafir kullanıcılar için captcha kontrolü
+	if(!$member_id['user_id']) {
+		$captcha_valid = check_captcha_code($config, $config['allow_recaptcha']);
+		if(!$captcha_valid) {
+			$_SESSION['sec_code_session'] = false;
+			$search_message = '<div class="alert alert-danger"><i class="fa fa-exclamation-triangle"></i> <strong>Güvenlik Hatası!</strong> Lütfen güvenlik doğrulamasını tamamlayın.</div>';
+		} else {
+			$_SESSION['sec_code_session'] = false; // Captcha'yı sıfırla
+		}
+	}
+
+	if(empty($settings['tmdb_api_key'])) {
+		$search_message = '<div class="alert alert-danger">' . $lang_film_requests['no_api_key'] . '</div>';
+	} elseif(empty($query)) {
+		$search_message = '<div class="alert alert-warning">' . $lang_film_requests['empty_search'] . '</div>';
+	} elseif(!$member_id['user_id'] && !$captcha_valid) {
+		// Captcha hatası zaten yukarıda set edildi
+	} else {
+
+		if(preg_match('/^tt\d+$/', $query)) {
+			$api_url = "https://api.themoviedb.org/3/find/" . urlencode($query) . "?api_key=" . $settings['tmdb_api_key'] . "&external_source=imdb_id&language=tr-TR";
+		} else {
+			$search_endpoint = $search_type == 'tv' ? 'search/tv' : 'search/movie';
+			$api_url = "https://api.themoviedb.org/3/{$search_endpoint}?api_key=" . $settings['tmdb_api_key'] . "&query=" . urlencode($query) . "&language=tr-TR";
+		}
+
+		$ch = curl_init();
+		curl_setopt($ch, CURLOPT_URL, $api_url);
+		curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+		curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
+		curl_setopt($ch, CURLOPT_TIMEOUT, 10);
+		curl_setopt($ch, CURLOPT_USERAGENT, 'Mozilla/5.0');
+		$response = curl_exec($ch);
+		$http_code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+		curl_close($ch);
+
+		if($http_code == 200 && $response) {
+			$data = json_decode($response, true);
+
+			if(preg_match('/^tt\d+$/', $query)) {
+				$results_key = $search_type == 'tv' ? 'tv_results' : 'movie_results';
+				$results = isset($data[$results_key]) ? $data[$results_key] : array();
+			} else {
+				$results = isset($data['results']) ? $data['results'] : array();
+			}
+
+			if(!empty($results)) {
+				foreach($results as $item) {
+					$tmdb_id = intval($item['id']);
+
+					if($search_type == 'tv') {
+						$item_title = isset($item['name']) ? htmlspecialchars($item['name'], ENT_QUOTES, 'UTF-8') : '';
+						$original_title = isset($item['original_name']) ? htmlspecialchars($item['original_name'], ENT_QUOTES, 'UTF-8') : '';
+						$release_date = isset($item['first_air_date']) ? $item['first_air_date'] : '';
+					} else {
+						$item_title = isset($item['title']) ? htmlspecialchars($item['title'], ENT_QUOTES, 'UTF-8') : '';
+						$original_title = isset($item['original_title']) ? htmlspecialchars($item['original_title'], ENT_QUOTES, 'UTF-8') : '';
+						$release_date = isset($item['release_date']) ? $item['release_date'] : '';
+					}
+
+					$item_year = $release_date ? substr($release_date, 0, 4) : '';
+					$poster_path = isset($item['poster_path']) ? $item['poster_path'] : '';
+					$backdrop_path = isset($item['backdrop_path']) ? $item['backdrop_path'] : '';
+					$poster_url = $poster_path ? 'https://image.tmdb.org/t/p/w200' . $poster_path : '';
+					$item_overview = isset($item['overview']) ? htmlspecialchars($item['overview'], ENT_QUOTES, 'UTF-8') : '';
+					$vote_average = isset($item['vote_average']) ? floatval($item['vote_average']) : 0;
+					$genre_ids = isset($item['genre_ids']) ? implode(',', $item['genre_ids']) : '';
+
+					$check_existing = $db->super_query("SELECT status FROM " . PREFIX . "_film_requests
+														WHERE tmdb_id = '{$tmdb_id}'
+														AND type = '{$search_type}'");
+
+					$already_requested_badge = '';
+					$add_button_disabled = '';
+					if($check_existing) {
+						if($check_existing['status'] == 'pending') {
+							$already_requested_badge = '<span class="label label-warning"><i class="fa fa-clock-o"></i> İstek Yapıldı - Beklemede</span>';
+							$add_button_disabled = 'disabled';
+						} elseif($check_existing['status'] == 'approved') {
+							$already_requested_badge = '<span class="label label-success"><i class="fa fa-check"></i> Onaylandı</span>';
+							$add_button_disabled = 'disabled';
+						}
+					}
+
+					$search_results .= '<div class="movie-card">
+							<div class="movie-card-inner">
+								<div class="movie-poster-col">';
+
+					if($poster_url) {
+						$search_results .= '<img src="' . $poster_url . '" alt="' . $item_title . '" class="movie-poster">';
+					} else {
+						$search_results .= '<div class="no-poster"><i class="fa fa-film fa-3x"></i></div>';
+					}
+
+					$search_results .= '<div class="movie-badge">' . ($search_type == 'tv' ? '<span class="label label-info">Dizi</span>' : '<span class="label label-primary">Film</span>') . '</div>
+						<div class="movie-overlay">
+							<h5>' . $item_title . '</h5>
+							<div class="movie-year">' . $item_year . '</div>
+						</div>
+					</div>';
+
+					$search_results .= '<div class="movie-info-col">
+								<h4>' . $item_title . ' (' . $item_year . ')</h4>
+								<p>
+									<span class="label label-info">' . ($search_type == 'tv' ? 'Dizi' : 'Film') . '</span>
+									' . $already_requested_badge . '
+								</p>';
+
+					if($original_title && $original_title != $item_title) {
+						$search_results .= '<p class="text-muted"><small>' . $original_title . '</small></p>';
+					}
+
+					if($vote_average > 0) {
+						$search_results .= '<p><span class="label label-warning"><i class="fa fa-star"></i> ' . number_format($vote_average, 1) . '/10</span></p>';
+					}
+
+					$search_results .= '<form method="post" action="" class="film-request-form" style="display: inline;">
+									<input type="hidden" name="add_request" value="submit">
+									<input type="hidden" name="tmdb_id" value="' . $tmdb_id . '">
+									<input type="hidden" name="content_type" value="' . $search_type . '">
+									<input type="hidden" name="title" value="' . htmlspecialchars($search_type == 'tv' ? $item['name'] : $item['title'], ENT_QUOTES, 'UTF-8') . '">
+									<input type="hidden" name="original_title" value="' . htmlspecialchars($search_type == 'tv' ? $item['original_name'] : $item['original_title'], ENT_QUOTES, 'UTF-8') . '">
+									<input type="hidden" name="year" value="' . $item_year . '">
+									<input type="hidden" name="poster" value="' . $poster_path . '">
+									<input type="hidden" name="backdrop" value="' . $backdrop_path . '">
+									<input type="hidden" name="overview" value="' . htmlspecialchars($item['overview'], ENT_QUOTES, 'UTF-8') . '">
+									<input type="hidden" name="genres" value="' . $genre_ids . '">
+									<input type="hidden" name="vote_average" value="' . $vote_average . '">
+									<button type="submit" class="btn btn-success btn-xs" ' . $add_button_disabled . '>
+										<i class="fa fa-plus"></i> Ekle
+									</button>
+								</form>
+								<a href="https://www.themoviedb.org/' . ($search_type == 'tv' ? 'tv' : 'movie') . '/' . $tmdb_id . '" target="_blank" class="btn btn-info btn-xs">
+									<i class="fa fa-external-link"></i> TMDb\'de Gör
+								</a>
+							</div>
+						</div>
+					</div>';
+				}
+			} else {
+				$search_message = '<div class="alert alert-warning">' . $lang_film_requests['no_results'] . '</div>';
+			}
+		} else {
+			$search_message = '<div class="alert alert-danger">' . $lang_film_requests['api_error'] . '</div>';
+		}
+	}
+}
+
+// Beklemedeki istekler - TABLO GÖRÜNÜMÜ
+$pending_requests = '';
+if($settings['show_pending_requests'] == '1') {
+	$pending_query = $db->query("SELECT * FROM " . PREFIX . "_film_requests
+								WHERE status = 'pending'
+								ORDER BY added_at DESC
+								LIMIT 20");
+
+	$pending_requests .= '<div class="table-responsive">
+		<table class="film-request-table">
+			<thead>
+				<tr>
+					<th>Poster</th>
+					<th>Başlık</th>
+					<th>Yıl</th>
+					<th>Tür</th>
+					<th>Puan</th>
+					<th>Ekleyen</th>
+					<th>Tarih</th>
+					<th>TMDb</th>
+				</tr>
+			</thead>
+			<tbody>';
+
+	while($req = $db->get_row($pending_query)) {
+		$poster_url = $req['poster'] ? 'https://image.tmdb.org/t/p/w92' . $req['poster'] : '';
+		$type_badge = $req['type'] == 'tv' ? '<span class="label label-info">Dizi</span>' : '<span class="label label-primary">Film</span>';
+
+		// Admin notu veya durum mesajı göster
+		$admin_note_html = '';
+		if(!empty($req['admin_note'])) {
+			// Admin notu varsa
+			if($req['status'] == 'rejected') {
+				// Reddedildiyse: Hem reddedildi ibaresi hem red sebebi
+				$admin_note_html = '<br><small class="status-note-rejected"><i class="fa fa-times-circle"></i> <strong>İstek reddedildi.</strong><br><span class="rejection-reason">Sebep: ' . htmlspecialchars($req['admin_note'], ENT_QUOTES, 'UTF-8') . '</span></small>';
+			} else {
+				// Diğer durumlarda sadece admin notu (onaylandı veya beklemede)
+				$admin_note_html = '<br><small class="admin-note-text"><i class="fa fa-sticky-note text-warning"></i> <strong>Admin Notu:</strong> ' . htmlspecialchars($req['admin_note'], ENT_QUOTES, 'UTF-8') . '</small>';
+			}
+		} elseif($req['status'] == 'approved') {
+			// Onaylandıysa "Eklendi" mesajı
+			$content_type = $req['type'] == 'tv' ? 'Dizi' : 'Film';
+			$admin_note_html = '<br><small class="status-note-approved"><i class="fa fa-check-circle"></i> <strong>' . $content_type . ' sitemize eklendi!</strong></small>';
+		} elseif($req['status'] == 'rejected') {
+			// Reddedildiyse sadece mesaj (not yoksa)
+			$admin_note_html = '<br><small class="status-note-rejected"><i class="fa fa-times-circle"></i> <strong>İstek reddedildi.</strong></small>';
+		}
+
+		$pending_requests .= '<tr>
+					<td data-label="Poster">' . ($poster_url ? '<img src="' . $poster_url . '" alt="' . htmlspecialchars($req['title'], ENT_QUOTES, 'UTF-8') . '" style="width: 60px; height: auto; border-radius: 4px;">' : '<div style="width: 60px; height: 90px; background: #f0f0f0; display: flex; align-items: center; justify-content: center; border-radius: 4px;"><i class="fa fa-film"></i></div>') . '</td>
+					<td data-label="Başlık"><strong>' . htmlspecialchars($req['title'], ENT_QUOTES, 'UTF-8') . '</strong><br>
+						<small class="text-muted">' . ($req['original_title'] && $req['original_title'] != $req['title'] ? htmlspecialchars($req['original_title'], ENT_QUOTES, 'UTF-8') : '') . '</small>
+						' . $admin_note_html . '
+					</td>
+					<td data-label="Yıl">' . $req['year'] . '</td>
+					<td data-label="Tür">' . $type_badge . '</td>
+					<td data-label="Puan">' . ($req['vote_average'] > 0 ? '<span class="label label-warning"><i class="fa fa-star"></i> ' . number_format($req['vote_average'], 1) . '</span>' : '-') . '</td>
+					<td data-label="Ekleyen">' . htmlspecialchars($req['username'], ENT_QUOTES, 'UTF-8') . '</td>
+					<td data-label="Tarih">' . date('d.m.Y H:i', $req['added_at']) . '</td>
+					<td data-label="TMDb"><a href="https://www.themoviedb.org/' . ($req['type'] == 'tv' ? 'tv' : 'movie') . '/' . $req['tmdb_id'] . '" target="_blank" class="btn btn-info btn-xs">
+						<i class="fa fa-external-link"></i> TMDb
+					</a></td>
+				</tr>';
+	}
+
+	$pending_requests .= '</tbody></table></div>';
+}
+
+// Mevcut isteklerim - TABLO GÖRÜNÜMÜ
+$my_requests = '';
+if($member_id['user_id']) {
+	$req_query = $db->query("SELECT * FROM " . PREFIX . "_film_requests
+							WHERE added_by = '" . intval($member_id['user_id']) . "'
+							ORDER BY added_at DESC
+							LIMIT 12");
+
+	$my_requests .= '<div class="table-responsive">
+		<table class="film-request-table">
+			<thead>
+				<tr>
+					<th>Poster</th>
+					<th>Başlık</th>
+					<th>Yıl</th>
+					<th>Tür</th>
+					<th>Durum</th>
+					<th>Puan</th>
+					<th>Tarih</th>
+					<th>TMDb</th>
+				</tr>
+			</thead>
+			<tbody>';
+
+	while($req = $db->get_row($req_query)) {
+		$status_class = $req['status'] == 'approved' ? 'success' : ($req['status'] == 'rejected' ? 'danger' : 'warning');
+		$status_icon = $req['status'] == 'approved' ? 'check' : ($req['status'] == 'rejected' ? 'xmark' : 'clock');
+		$status_text = $req['status'] == 'approved' ? $lang_film_requests['status_approved'] : ($req['status'] == 'rejected' ? $lang_film_requests['status_rejected'] : $lang_film_requests['status_pending']);
+
+		$poster_url = $req['poster'] ? 'https://image.tmdb.org/t/p/w92' . $req['poster'] : '';
+		$type_badge = $req['type'] == 'tv' ? '<span class="label label-info">Dizi</span>' : '<span class="label label-primary">Film</span>';
+
+		// Admin notu veya durum mesajı göster
+		$admin_note_html = '';
+		if(!empty($req['admin_note'])) {
+			// Admin notu varsa
+			if($req['status'] == 'rejected') {
+				// Reddedildiyse: Hem reddedildi ibaresi hem red sebebi
+				$admin_note_html = '<br><small class="status-note-rejected"><i class="fa fa-times-circle"></i> <strong>İstek reddedildi.</strong><br><span class="rejection-reason">Sebep: ' . htmlspecialchars($req['admin_note'], ENT_QUOTES, 'UTF-8') . '</span></small>';
+			} else {
+				// Diğer durumlarda sadece admin notu (onaylandı veya beklemede)
+				$admin_note_html = '<br><small class="admin-note-text"><i class="fa fa-sticky-note text-warning"></i> <strong>Admin Notu:</strong> ' . htmlspecialchars($req['admin_note'], ENT_QUOTES, 'UTF-8') . '</small>';
+			}
+		} elseif($req['status'] == 'approved') {
+			// Onaylandıysa "Eklendi" mesajı
+			$content_type = $req['type'] == 'tv' ? 'Dizi' : 'Film';
+			$admin_note_html = '<br><small class="status-note-approved"><i class="fa fa-check-circle"></i> <strong>' . $content_type . ' sitemize eklendi!</strong></small>';
+		} elseif($req['status'] == 'rejected') {
+			// Reddedildiyse sadece mesaj (not yoksa)
+			$admin_note_html = '<br><small class="status-note-rejected"><i class="fa fa-times-circle"></i> <strong>İstek reddedildi.</strong></small>';
+		}
+
+		$my_requests .= '<tr>
+					<td data-label="Poster">' . ($poster_url ? '<img src="' . $poster_url . '" alt="' . htmlspecialchars($req['title'], ENT_QUOTES, 'UTF-8') . '" style="width: 60px; height: auto; border-radius: 4px;">' : '<div style="width: 60px; height: 90px; background: #f0f0f0; display: flex; align-items: center; justify-content: center; border-radius: 4px;"><i class="fa fa-film"></i></div>') . '</td>
+					<td data-label="Başlık"><strong>' . htmlspecialchars($req['title'], ENT_QUOTES, 'UTF-8') . '</strong><br>
+						<small class="text-muted">' . ($req['original_title'] && $req['original_title'] != $req['title'] ? htmlspecialchars($req['original_title'], ENT_QUOTES, 'UTF-8') : '') . '</small>
+						' . $admin_note_html . '
+					</td>
+					<td data-label="Yıl">' . $req['year'] . '</td>
+					<td data-label="Tür">' . $type_badge . '</td>
+					<td data-label="Durum"><span class="label label-' . $status_class . '"><i class="fa-solid fa-' . $status_icon . '"></i> ' . $status_text . '</span></td>
+					<td data-label="Puan">' . ($req['vote_average'] > 0 ? '<span class="label label-warning"><i class="fa fa-star"></i> ' . number_format($req['vote_average'], 1) . '</span>' : '-') . '</td>
+					<td data-label="Tarih">' . date('d.m.Y H:i', $req['added_at']) . '</td>
+					<td data-label="TMDb"><a href="https://www.themoviedb.org/' . ($req['type'] == 'tv' ? 'tv' : 'movie') . '/' . $req['tmdb_id'] . '" target="_blank" class="btn btn-info btn-xs">
+						<i class="fa fa-external-link"></i> TMDb
+					</a></td>
+				</tr>';
+	}
+
+	$my_requests .= '</tbody></table></div>';
+}
+
+// Kalan istek hakkı
+$remaining_requests = '';
+if($member_id['user_id'] || $settings['allow_guests'] == '1') {
+	$user_id = $member_id['user_id'] ? intval($member_id['user_id']) : 0;
+	$ip_address = $_SERVER['REMOTE_ADDR'];
+	$today = date('Y-m-d');
+	$daily_limit = intval($settings['daily_limit']);
+
+	$limit_info = $db->super_query("SELECT request_count FROM " . PREFIX . "_film_request_limits
+									WHERE user_id = '{$user_id}'
+									AND ip_address = '{$ip_address}'
+									AND request_date = '{$today}'");
+
+	$used_requests = $limit_info['request_count'] ? $limit_info['request_count'] : 0;
+	$remaining_count = $daily_limit - $used_requests;
+
+	if($remaining_count >= 0) {
+		$remaining_requests = '<div class="alert alert-info"><i class="fa-solid fa-info-circle"></i> Bugün ' . $daily_limit . ' istek hakkınız var. Kalan: ' . $remaining_count . '</div>';
+	}
+}
+
+// Template dosyasını yükle
+$tpl->load_template('film_requests.tpl');
+
+// Değişkenleri ata
+$tpl->set('{title}', $lang_film_requests['page_title']);
+$tpl->set('{search_placeholder}', $lang_film_requests['search_placeholder']);
+$tpl->set('{search_button}', $lang_film_requests['search_button']);
+$tpl->set('{movie_checked}', $search_type == 'movie' ? 'checked' : '');
+$tpl->set('{tv_checked}', $search_type == 'tv' ? 'checked' : '');
+$tpl->set('{search_message}', $search_message);
+$tpl->set('{search_results}', $search_results);
+$tpl->set('{pending_requests}', $pending_requests);
+$tpl->set('{my_requests}', $my_requests);
+$tpl->set('{remaining_requests}', $remaining_requests);
+
+// Captcha HTML ve Script Oluştur (Misafirler için)
+$captcha_html = '';
+$captcha_html_request = '';
+$captcha_notice = '';
+$recaptcha_script = '';
+
+if(!$member_id['user_id']) {
+
+	// Captcha uyarı mesajı
+	$captcha_notice = '<div class="alert alert-warning" style="margin: 20px; text-align: center;">
+		<i class="fa fa-exclamation-triangle"></i> <strong>Önemli:</strong> İstek eklemek için aşağıdaki güvenlik doğrulamasını tamamlamanız gerekmektedir.
+	</div>';
+
+	if ($config['allow_recaptcha']) {
+
+		$captcha_name = "g-recaptcha";
+		$captcha_url = "https://www.google.com/recaptcha/api.js?hl={$lang['language_code']}";
+
+		if($config['allow_recaptcha'] == 3) {
+			$captcha_name = "h-captcha";
+			$captcha_url = "https://js.hcaptcha.com/1/api.js?hl={$lang['language_code']}";
+		}
+
+		if($config['allow_recaptcha'] == 4) {
+			$captcha_url = "https://challenges.cloudflare.com/turnstile/v0/api.js?compat=recaptcha";
+		}
+
+		// reCAPTCHA HTML widget (arama formu için)
+		$captcha_html = '<div class="' . $captcha_name . '" data-sitekey="' . $config['recaptcha_public_key'] . '" data-theme="' . $config['recaptcha_theme'] . '" data-language="' . $lang['language_code'] . '"></div>';
+
+		// reCAPTCHA HTML widget (istek ekleme için)
+		$captcha_html_request = '<div class="' . $captcha_name . '" data-sitekey="' . $config['recaptcha_public_key'] . '" data-theme="' . $config['recaptcha_theme'] . '" data-language="' . $lang['language_code'] . '"></div>';
+
+		$recaptcha_script = '<script src="' . $captcha_url . '" async defer></script>';
+
+	} else {
+		// Geleneksel DLE Captcha (arama formu için)
+		$path = parse_url($config['http_home_url']);
+		$captcha_html = '<div class="captcha-wrapper" style="margin: 10px 0;">
+							<label>Güvenlik Kodu:</label><br>
+							<a onclick="reload(); return false;" href="#" title="Kodu Yenile">
+								<span id="dle-captcha">
+									<img src="' . $path['path'] . 'index.php?controller=antibot" alt="Güvenlik Kodu" width="160" height="80" style="border-radius: 4px;">
+								</span>
+							</a>
+							<input type="text" name="sec_code" class="form-control" placeholder="Yukarıdaki kodu girin" style="max-width: 200px; margin-top: 5px;" required>
+						</div>
+						<script>
+						function reload() {
+							var img = document.getElementById("dle-captcha").getElementsByTagName("img")[0];
+							img.src = "' . $path['path'] . 'index.php?controller=antibot&" + Math.random();
+						}
+						</script>';
+
+		// Geleneksel DLE Captcha (istek ekleme için - aynısı)
+		$captcha_html_request = $captcha_html;
+	}
+}
+
+$tpl->set('{captcha_html}', $captcha_html);
+$tpl->set('{captcha_html_request}', $captcha_html_request);
+$tpl->set('{captcha_notice}', $captcha_notice);
+$tpl->set('{recaptcha_script}', $recaptcha_script);
+
+// Koşullu bloklar
+if($search_results) {
+	$tpl->copy_template = str_ireplace("[search_results]", "", $tpl->copy_template);
+	$tpl->copy_template = str_ireplace("[/search_results]", "", $tpl->copy_template);
+} else {
+	$tpl->copy_template = preg_replace("'\\[search_results\\](.*?)\\[/search_results\\]'si", '', $tpl->copy_template);
+}
+
+if($pending_requests) {
+	$tpl->copy_template = str_ireplace("[pending_requests]", "", $tpl->copy_template);
+	$tpl->copy_template = str_ireplace("[/pending_requests]", "", $tpl->copy_template);
+} else {
+	$tpl->copy_template = preg_replace("'\\[pending_requests\\](.*?)\\[/pending_requests\\]'si", '', $tpl->copy_template);
+}
+
+if($member_id['user_id'] && $my_requests) {
+	$tpl->copy_template = str_ireplace("[my_requests]", "", $tpl->copy_template);
+	$tpl->copy_template = str_ireplace("[/my_requests]", "", $tpl->copy_template);
+} else {
+	$tpl->copy_template = preg_replace("'\\[my_requests\\](.*?)\\[/my_requests\\]'si", '', $tpl->copy_template);
+}
+
+$tpl->compile('content');
+$tpl->clear();
+]]></replacecode>
+			<enabled>1</enabled>
+		</operation>
+	</file>
+	<file name="engine/inc/film_requests.php">
+		<operation action="create">
+			<replacecode><![CDATA[<?php
+/*
+=====================================================
+ Film İstek Modülü Pro - Admin Panel
+ DLE 13+ Uyumlu
+ Film + Dizi + Rate Limiting
+=====================================================
+*/
+
+if(!defined('DATALIFEENGINE') || !defined('LOGGED_IN')) die("Hacking attempt!");
+if($member_id['user_group'] != 1) die("Access denied!");
+
+// Session başlat
+if (!isset($_SESSION)) {
+	session_start();
+}
+
+// Dil dosyası
+$lang_film_requests = array(
+	'admin_title' => 'Film & Dizi İstekleri Yönetimi',
+	'admin_settings_saved' => 'Başarılı',
+	'admin_settings_saved_text' => 'Ayarlar başarıyla kaydedildi!',
+	'no_requests' => 'Henüz istek yok',
+	'status_pending' => 'Beklemede',
+	'status_approved' => 'Onaylandı',
+	'status_rejected' => 'Reddedildi',
+	'type_movie' => 'Film',
+	'type_tv' => 'Dizi'
+);
+
+// Ayarları yükle
+$settings = array();
+$settings_query = $db->query("SELECT setting_name, setting_value FROM " . PREFIX . "_film_request_settings");
+while($row = $db->get_row($settings_query)) {
+	$settings[$row['setting_name']] = $row['setting_value'];
+}
+
+$action = isset($_REQUEST['subaction']) ? $_REQUEST['subaction'] : '';
+
+echoheader("Film & Dizi İstekleri", "Film ve dizi isteklerini yönetin");
+
+// Ayarları Kaydet
+if($action == 'save_settings' && $_SERVER['REQUEST_METHOD'] == 'POST') {
+
+	$tmdb_api_key = $db->safesql(trim($_POST['tmdb_api_key']));
+	$allow_guests = isset($_POST['allow_guests']) ? 1 : 0;
+	$notify_admin = isset($_POST['notify_admin']) ? 1 : 0;
+	$admin_email = $db->safesql(trim($_POST['admin_email']));
+	$items_per_page = intval($_POST['items_per_page']);
+	$daily_limit = intval($_POST['daily_limit']);
+	$show_pending_requests = isset($_POST['show_pending_requests']) ? 1 : 0;
+
+	if($items_per_page < 5) $items_per_page = 20;
+	if($daily_limit < 1) $daily_limit = 5;
+
+	$db->query("UPDATE " . PREFIX . "_film_request_settings SET setting_value = '{$tmdb_api_key}' WHERE setting_name = 'tmdb_api_key'");
+	$db->query("UPDATE " . PREFIX . "_film_request_settings SET setting_value = '{$allow_guests}' WHERE setting_name = 'allow_guests'");
+	$db->query("UPDATE " . PREFIX . "_film_request_settings SET setting_value = '{$notify_admin}' WHERE setting_name = 'notify_admin'");
+	$db->query("UPDATE " . PREFIX . "_film_request_settings SET setting_value = '{$admin_email}' WHERE setting_name = 'admin_email'");
+	$db->query("UPDATE " . PREFIX . "_film_request_settings SET setting_value = '{$items_per_page}' WHERE setting_name = 'items_per_page'");
+	$db->query("UPDATE " . PREFIX . "_film_request_settings SET setting_value = '{$daily_limit}' WHERE setting_name = 'daily_limit'");
+	$db->query("UPDATE " . PREFIX . "_film_request_settings SET setting_value = '{$show_pending_requests}' WHERE setting_name = 'show_pending_requests'");
+
+	clear_cache();
+
+	$_SESSION['film_success'] = $lang_film_requests['admin_settings_saved_text'];
+	header("Location: admin.php?mod=film_requests&tab=settings");
+	exit;
+}
+
+// Durum Değiştir
+if($action == 'change_status') {
+	$id = intval($_GET['id']);
+	$status = in_array($_GET['status'], array('pending', 'approved', 'rejected')) ? $_GET['status'] : 'pending';
+
+	$db->query("UPDATE " . PREFIX . "_film_requests SET status = '{$status}' WHERE id = '{$id}'");
+
+	header("Location: admin.php?mod=film_requests");
+	exit;
+}
+
+// Sil
+if($action == 'delete') {
+	$id = intval($_GET['id']);
+	$db->query("DELETE FROM " . PREFIX . "_film_requests WHERE id = '{$id}'");
+
+	header("Location: admin.php?mod=film_requests");
+	exit;
+}
+
+// Admin Not Kaydet
+if($action == 'save_note' && $_SERVER['REQUEST_METHOD'] == 'POST') {
+	$id = intval($_POST['request_id']);
+	$admin_note = $db->safesql(trim($_POST['admin_note']));
+
+	$db->query("UPDATE " . PREFIX . "_film_requests SET admin_note = '{$admin_note}' WHERE id = '{$id}'");
+
+	$_SESSION['film_success'] = 'Not kaydedildi!';
+	header("Location: admin.php?mod=film_requests");
+	exit;
+}
+
+// Toplu İşlem
+if($action == 'mass_action' && $_SERVER['REQUEST_METHOD'] == 'POST') {
+	$mass_action = $_POST['mass_action'];
+	$selected = isset($_POST['selected']) ? $_POST['selected'] : array();
+
+	if(!empty($selected) && in_array($mass_action, array('approve', 'reject', 'delete'))) {
+		$ids = array_map('intval', $selected);
+		$ids_str = implode(',', $ids);
+
+		if($mass_action == 'approve') {
+			$db->query("UPDATE " . PREFIX . "_film_requests SET status = 'approved' WHERE id IN ({$ids_str})");
+		} elseif($mass_action == 'reject') {
+			$db->query("UPDATE " . PREFIX . "_film_requests SET status = 'rejected' WHERE id IN ({$ids_str})");
+		} elseif($mass_action == 'delete') {
+			$db->query("DELETE FROM " . PREFIX . "_film_requests WHERE id IN ({$ids_str})");
+		}
+	}
+
+	header("Location: admin.php?mod=film_requests");
+	exit;
+}
+
+// Eski kayıtları temizle (30 günden eski)
+if($action == 'cleanup_old') {
+	$db->query("DELETE FROM " . PREFIX . "_film_request_limits WHERE request_date < DATE_SUB(CURDATE(), INTERVAL 30 DAY)");
+	$_SESSION['film_success'] = 'Eski rate limit kayıtları temizlendi!';
+	header("Location: admin.php?mod=film_requests&tab=stats");
+	exit;
+}
+
+$tab = isset($_GET['tab']) ? $_GET['tab'] : 'list';
+
+// Tab aktif durumları
+$list_tab_active = ($tab == 'list') ? 'active' : '';
+$settings_tab_active = ($tab == 'settings') ? 'active' : '';
+$stats_tab_active = ($tab == 'stats') ? 'active' : '';
+
+// Sayfa başlangıcı
+?>
+<style>
+.label-inline { display: inline-block; margin-right: 5px; }
+.table-actions { white-space: nowrap; }
+.stats-box {
+	padding: 20px;
+	text-align: center;
+	background: #f5f5f5;
+	border-radius: 4px;
+	margin-bottom: 20px;
+	min-height: 150px;
+	display: flex;
+	flex-direction: column;
+	justify-content: center;
+}
+.stats-box h3 { margin: 0 0 5px 0; font-size: 32px; font-weight: bold; }
+.stats-box p { margin: 0; color: #999; font-size: 12px; text-transform: uppercase; }
+.note-badge { cursor: pointer; }
+
+/* Tablo responsive düzeltmeleri */
+.table-responsive {
+	overflow-x: auto;
+	-webkit-overflow-scrolling: touch;
+	margin-bottom: 15px;
+}
+
+/* Admin panel tablo hücreleri - geniş tutuldu */
+.table-bordered > thead > tr > th,
+.table-bordered > tbody > tr > td {
+	white-space: normal;
+	vertical-align: middle;
+}
+
+/* Başlık kolonu - rahat genişlik */
+.table-bordered > thead > tr > th:nth-child(4),
+.table-bordered > tbody > tr > td:nth-child(4) {
+	min-width: 220px;
+}
+
+/* Ekleyen kolonu */
+.table-bordered > thead > tr > th:nth-child(7),
+.table-bordered > tbody > tr > td:nth-child(7) {
+	min-width: 110px;
+}
+
+/* Tarih kolonu */
+.table-bordered > thead > tr > th:nth-child(8),
+.table-bordered > tbody > tr > td:nth-child(8) {
+	min-width: 130px;
+}
+
+/* İşlemler kolonu - geniş */
+.table-bordered > thead > tr > th:nth-child(10),
+.table-bordered > tbody > tr > td:nth-child(10) {
+	min-width: 220px;
+}
+
+.btn-group-xs > .btn {
+	padding: 5px 10px;
+	font-size: 11px;
+	margin: 1px;
+}
+
+/* Admin panel için responsive */
+@media (max-width: 1400px) {
+	.table-bordered > thead > tr > th:nth-child(4),
+	.table-bordered > tbody > tr > td:nth-child(4) {
+		min-width: 200px;
+	}
+}
+
+@media (max-width: 1200px) {
+	.table-responsive {
+		font-size: 13px;
+	}
+
+	.btn-group-xs > .btn {
+		padding: 3px 6px;
+		font-size: 10px;
+	}
+}
+</style>
+
+<div class="navbar navbar-default navbar-component navbar-xs">
+	<ul class="nav navbar-nav visible-xs-block">
+		<li class="full-width text-center"><a data-toggle="collapse" data-target="#navbar-filter"><i class="fa fa-bars"></i></a></li>
+	</ul>
+	<div class="navbar-collapse collapse" id="navbar-filter">
+		<ul class="nav navbar-nav">
+			<li class="<?php echo $list_tab_active; ?>"><a href="admin.php?mod=film_requests&tab=list"><i class="fa fa-list"></i> İstekler</a></li>
+			<li class="<?php echo $settings_tab_active; ?>"><a href="admin.php?mod=film_requests&tab=settings"><i class="fa fa-cog"></i> Ayarlar</a></li>
+			<li class="<?php echo $stats_tab_active; ?>"><a href="admin.php?mod=film_requests&tab=stats"><i class="fa fa-bar-chart"></i> İstatistikler</a></li>
+		</ul>
+	</div>
+</div>
+
+<?php
+// Başarı mesajı
+if(isset($_SESSION['film_success'])) {
+	echo '<div class="alert alert-success alert-dismissible" role="alert">
+			<button type="button" class="close" data-dismiss="alert" aria-label="Close"><span aria-hidden="true">&times;</span></button>
+			<i class="fa fa-check-circle"></i> <strong>Başarılı!</strong> ' . $_SESSION['film_success'] . '
+		  </div>';
+	unset($_SESSION['film_success']);
+}
+
+// AYARLAR SEKMESI
+if($tab == 'settings') {
+
+	$allow_guests_checked = ($settings['allow_guests'] == '1') ? 'checked="checked"' : '';
+	$notify_admin_checked = ($settings['notify_admin'] == '1') ? 'checked="checked"' : '';
+	$show_pending_requests_checked = ($settings['show_pending_requests'] == '1') ? 'checked="checked"' : '';
+
+	?>
+	<form action="admin.php?mod=film_requests&subaction=save_settings" method="post" class="form-horizontal">
+	<div class="panel panel-default">
+		<div class="panel-heading">
+			<h3 class="panel-title"><i class="fa fa-cog"></i> Genel Ayarlar</h3>
+		</div>
+		<div class="panel-body">
+			<div class="alert alert-info">
+				<i class="fa fa-info-circle"></i> <strong>Bilgi:</strong> TMDb API Key almak için <a href="https://www.themoviedb.org/settings/api" target="_blank" class="alert-link">buraya tıklayın</a>
+			</div>
+
+			<div class="form-group">
+				<label class="col-sm-3 control-label">TMDb API Key <span class="text-danger">*</span></label>
+				<div class="col-sm-9">
+					<input type="text" name="tmdb_api_key" class="form-control" value="<?php echo htmlspecialchars($settings['tmdb_api_key'], ENT_QUOTES, 'UTF-8'); ?>" required>
+					<span class="help-block">API Key'inizi buraya girin</span>
+				</div>
+			</div>
+
+			<div class="form-group">
+				<label class="col-sm-3 control-label">Misafir Kullanıcılar</label>
+				<div class="col-sm-9">
+					<div class="checkbox">
+						<label>
+							<input type="checkbox" name="allow_guests" value="1" class="icheck" <?php echo $allow_guests_checked; ?>>
+							Giriş yapmamış kullanıcılar istek ekleyebilsin
+						</label>
+					</div>
+				</div>
+			</div>
+
+			<div class="form-group">
+				<label class="col-sm-3 control-label">Bekleyen İstekleri Göster</label>
+				<div class="col-sm-9">
+					<div class="checkbox">
+						<label>
+							<input type="checkbox" name="show_pending_requests" value="1" class="icheck" <?php echo $show_pending_requests_checked; ?>>
+							Beklemedeki istekleri kullanıcılara göster (mükerrer önleme için)
+						</label>
+					</div>
+				</div>
+			</div>
+
+			<div class="form-group">
+				<label class="col-sm-3 control-label">Günlük İstek Limiti</label>
+				<div class="col-sm-9">
+					<input type="number" name="daily_limit" class="form-control" value="<?php echo htmlspecialchars($settings['daily_limit'], ENT_QUOTES, 'UTF-8'); ?>" min="1" max="100" style="width: 150px;">
+					<span class="help-block">Bir kullanıcının günde ekleyebileceği maksimum istek sayısı (Spam önleme)</span>
+				</div>
+			</div>
+
+			<div class="form-group">
+				<label class="col-sm-3 control-label">Sayfalama</label>
+				<div class="col-sm-9">
+					<input type="number" name="items_per_page" class="form-control" value="<?php echo htmlspecialchars($settings['items_per_page'], ENT_QUOTES, 'UTF-8'); ?>" min="5" max="100" style="width: 150px;">
+					<span class="help-block">Sayfa başına gösterilecek istek sayısı</span>
+				</div>
+			</div>
+
+			<hr>
+
+			<h4>E-posta Bildirimleri</h4>
+
+			<div class="form-group">
+				<label class="col-sm-3 control-label">E-posta Bildirimi</label>
+				<div class="col-sm-9">
+					<div class="checkbox">
+						<label>
+							<input type="checkbox" name="notify_admin" value="1" class="icheck" <?php echo $notify_admin_checked; ?>>
+							Yeni istek geldiğinde e-posta bildirimi gönder
+						</label>
+					</div>
+				</div>
+			</div>
+
+			<div class="form-group">
+				<label class="col-sm-3 control-label">Admin E-posta Adresi</label>
+				<div class="col-sm-9">
+					<input type="email" name="admin_email" class="form-control" value="<?php echo htmlspecialchars($settings['admin_email'], ENT_QUOTES, 'UTF-8'); ?>" style="max-width: 400px;">
+					<span class="help-block">Bildirimler bu adrese gönderilir</span>
+				</div>
+			</div>
+
+			<hr>
+
+			<div class="alert alert-warning">
+				<i class="fa fa-info-circle"></i> <strong>Not:</strong> Captcha/reCAPTCHA ayarları DLE'nin kendi ayarlarından yapılır (Genel Ayarlar > Güvenlik)
+			</div>
+		</div>
+		<div class="panel-footer">
+			<div class="form-group" style="margin: 0;">
+				<div class="col-sm-offset-3 col-sm-9">
+					<button type="submit" class="btn btn-primary btn-raised legitRipple">
+						<i class="fa fa-save"></i> Ayarları Kaydet
+					</button>
+				</div>
+			</div>
+		</div>
+	</div>
+	</form>
+	<?php
+
+} elseif($tab == 'stats') {
+	// İSTATİSTİKLER SEKMESI
+
+	$total_query = $db->super_query("SELECT COUNT(*) as cnt FROM " . PREFIX . "_film_requests");
+	$total_count = $total_query['cnt'];
+
+	$pending_query = $db->super_query("SELECT COUNT(*) as cnt FROM " . PREFIX . "_film_requests WHERE status = 'pending'");
+	$pending_count = $pending_query['cnt'];
+
+	$approved_query = $db->super_query("SELECT COUNT(*) as cnt FROM " . PREFIX . "_film_requests WHERE status = 'approved'");
+	$approved_count = $approved_query['cnt'];
+
+	$rejected_query = $db->super_query("SELECT COUNT(*) as cnt FROM " . PREFIX . "_film_requests WHERE status = 'rejected'");
+	$rejected_count = $rejected_query['cnt'];
+
+	$movies_query = $db->super_query("SELECT COUNT(*) as cnt FROM " . PREFIX . "_film_requests WHERE type = 'movie'");
+	$movies_count = $movies_query['cnt'];
+
+	$tv_query = $db->super_query("SELECT COUNT(*) as cnt FROM " . PREFIX . "_film_requests WHERE type = 'tv'");
+	$tv_count = $tv_query['cnt'];
+
+	$today_query = $db->super_query("SELECT COUNT(*) as cnt FROM " . PREFIX . "_film_requests WHERE added_at >= " . (time() - 86400));
+	$today_count = $today_query['cnt'];
+
+	?>
+	<div class="row">
+		<div class="col-md-3 col-sm-6">
+			<div class="stats-box" style="background: #5cb85c; color: white;">
+				<h3><?php echo $total_count; ?></h3>
+				<p>Toplam İstek</p>
+			</div>
+		</div>
+		<div class="col-md-3 col-sm-6">
+			<div class="stats-box" style="background: #f0ad4e; color: white;">
+				<h3><?php echo $pending_count; ?></h3>
+				<p>Bekleyen</p>
+			</div>
+		</div>
+		<div class="col-md-3 col-sm-6">
+			<div class="stats-box" style="background: #5bc0de; color: white;">
+				<h3><?php echo $approved_count; ?></h3>
+				<p>Onaylanan</p>
+			</div>
+		</div>
+		<div class="col-md-3 col-sm-6">
+			<div class="stats-box" style="background: #d9534f; color: white;">
+				<h3><?php echo $rejected_count; ?></h3>
+				<p>Reddedilen</p>
+			</div>
+		</div>
+	</div>
+
+	<div class="row">
+		<div class="col-md-4">
+			<div class="panel panel-default">
+				<div class="panel-heading">
+					<h3 class="panel-title"><i class="fa fa-clock-o"></i> Son 24 Saat</h3>
+				</div>
+				<div class="panel-body text-center">
+					<h2 style="font-size: 48px; margin: 20px 0; color: #5cb85c;"><?php echo $today_count; ?></h2>
+					<p class="text-muted">Bugün eklenen istek sayısı</p>
+				</div>
+			</div>
+		</div>
+
+		<div class="col-md-4">
+			<div class="panel panel-default">
+				<div class="panel-heading">
+					<h3 class="panel-title"><i class="fa fa-film"></i> Film vs Dizi</h3>
+				</div>
+				<div class="panel-body text-center">
+					<h2 style="font-size: 24px; margin: 20px 0;">
+						<span class="label label-primary">Film: <?php echo $movies_count; ?></span>
+						<span class="label label-info">Dizi: <?php echo $tv_count; ?></span>
+					</h2>
+					<?php
+					if($total_count > 0) {
+						$movie_percent = round(($movies_count / $total_count) * 100, 1);
+						$tv_percent = round(($tv_count / $total_count) * 100, 1);
+						echo '<p class="text-muted">Film: %' . $movie_percent . ' | Dizi: %' . $tv_percent . '</p>';
+					}
+					?>
+				</div>
+			</div>
+		</div>
+
+		<div class="col-md-4">
+			<div class="panel panel-default">
+				<div class="panel-heading">
+					<h3 class="panel-title"><i class="fa fa-pie-chart"></i> Durum Dağılımı</h3>
+				</div>
+				<div class="panel-body">
+					<?php
+					if($total_count > 0) {
+						$pending_percent = round(($pending_count / $total_count) * 100, 1);
+						$approved_percent = round(($approved_count / $total_count) * 100, 1);
+						$rejected_percent = round(($rejected_count / $total_count) * 100, 1);
+					} else {
+						$pending_percent = $approved_percent = $rejected_percent = 0;
+					}
+					?>
+					<div style="margin-bottom: 10px;">
+						<div class="clearfix">
+							<span class="pull-left"><small><strong>Bekleyen</strong></small></span>
+							<span class="pull-right"><small><?php echo $pending_percent; ?>%</small></span>
+						</div>
+						<div class="progress" style="margin-top: 5px; height: 10px;">
+							<div class="progress-bar progress-bar-warning" style="width: <?php echo $pending_percent; ?>%"></div>
+						</div>
+					</div>
+
+					<div style="margin-bottom: 10px;">
+						<div class="clearfix">
+							<span class="pull-left"><small><strong>Onaylanan</strong></small></span>
+							<span class="pull-right"><small><?php echo $approved_percent; ?>%</small></span>
+						</div>
+						<div class="progress" style="margin-top: 5px; height: 10px;">
+							<div class="progress-bar progress-bar-success" style="width: <?php echo $approved_percent; ?>%"></div>
+						</div>
+					</div>
+
+					<div style="margin-bottom: 0;">
+						<div class="clearfix">
+							<span class="pull-left"><small><strong>Reddedilen</strong></small></span>
+							<span class="pull-right"><small><?php echo $rejected_percent; ?>%</small></span>
+						</div>
+						<div class="progress" style="margin-top: 5px; height: 10px;">
+							<div class="progress-bar progress-bar-danger" style="width: <?php echo $rejected_percent; ?>%"></div>
+						</div>
+					</div>
+				</div>
+			</div>
+		</div>
+	</div>
+
+	<div class="panel panel-default">
+		<div class="panel-heading">
+			<h3 class="panel-title"><i class="fa fa-star"></i> Son Eklenen İçerikler (Top 20)</h3>
+		</div>
+		<div class="panel-body">
+			<div class="table-responsive">
+				<table class="table table-striped table-bordered">
+					<thead>
+						<tr>
+							<th width="50">#</th>
+							<th width="60">Tür</th>
+							<th>Başlık</th>
+							<th width="80">Yıl</th>
+							<th width="80">Puan</th>
+							<th width="120">Durum</th>
+							<th width="150">Ekleyen</th>
+							<th width="150">Tarih</th>
+						</tr>
+					</thead>
+					<tbody>
+					<?php
+					$top_requests = $db->query("SELECT * FROM " . PREFIX . "_film_requests ORDER BY added_at DESC LIMIT 20");
+					$rank = 1;
+					if($db->num_rows($top_requests) > 0) {
+						while($req = $db->get_row($top_requests)) {
+							$status_class = $req['status'] == 'approved' ? 'success' : ($req['status'] == 'rejected' ? 'danger' : 'warning');
+							$status_text = $req['status'] == 'approved' ? $lang_film_requests['status_approved'] : ($req['status'] == 'rejected' ? $lang_film_requests['status_rejected'] : $lang_film_requests['status_pending']);
+							$type_badge = $req['type'] == 'tv' ? '<span class="label label-info">Dizi</span>' : '<span class="label label-primary">Film</span>';
+
+							echo '<tr>
+								<td class="text-center"><strong>' . $rank . '</strong></td>
+								<td>' . $type_badge . '</td>
+								<td>' . htmlspecialchars($req['title'], ENT_QUOTES, 'UTF-8') . '</td>
+								<td class="text-center">' . $req['year'] . '</td>
+								<td class="text-center">' . ($req['vote_average'] > 0 ? '<span class="label label-warning"><i class="fa fa-star"></i> ' . $req['vote_average'] . '</span>' : '-') . '</td>
+								<td><span class="label label-' . $status_class . '">' . $status_text . '</span></td>
+								<td>' . htmlspecialchars($req['username'], ENT_QUOTES, 'UTF-8') . '</td>
+								<td><small>' . date('d.m.Y H:i', $req['added_at']) . '</small></td>
+							</tr>';
+							$rank++;
+						}
+					} else {
+						echo '<tr><td colspan="8" class="text-center text-muted">Henüz istek bulunmuyor</td></tr>';
+					}
+					?>
+					</tbody>
+				</table>
+			</div>
+		</div>
+		<div class="panel-footer">
+			<a href="admin.php?mod=film_requests&subaction=cleanup_old&tab=stats" class="btn btn-warning btn-sm btn-raised legitRipple" onclick="return confirm('30 günden eski rate limit kayıtları silinecek. Devam edilsin mi?')">
+				<i class="fa fa-trash"></i> Eski Kayıtları Temizle
+			</a>
+		</div>
+	</div>
+	<?php
+
+} else {
+	// İSTEKLER LİSTESİ
+
+	$page = isset($_GET['page']) ? intval($_GET['page']) : 1;
+	if($page < 1) $page = 1;
+
+	$items_per_page = intval($settings['items_per_page']);
+	$offset = ($page - 1) * $items_per_page;
+
+	$filter_status = isset($_GET['filter_status']) ? $_GET['filter_status'] : '';
+	$filter_type = isset($_GET['filter_type']) ? $_GET['filter_type'] : '';
+
+	$where = array();
+	if(in_array($filter_status, array('pending', 'approved', 'rejected'))) {
+		$where[] = "status = '{$filter_status}'";
+	}
+	if(in_array($filter_type, array('movie', 'tv'))) {
+		$where[] = "type = '{$filter_type}'";
+	}
+	$where_sql = !empty($where) ? " WHERE " . implode(' AND ', $where) : '';
+
+	$total = $db->super_query("SELECT COUNT(*) as cnt FROM " . PREFIX . "_film_requests" . $where_sql);
+	$total_items = $total['cnt'];
+	$total_pages = ceil($total_items / $items_per_page);
+
+	// Filtreler
+	?>
+	<div class="row" style="margin-bottom: 15px;">
+		<div class="col-sm-6">
+			<div class="btn-group" role="group">
+				<a href="admin.php?mod=film_requests" class="btn btn-sm btn-default btn-raised legitRipple <?php echo (empty($filter_status) && empty($filter_type)) ? 'active' : ''; ?>">
+					Tümü <span class="badge"><?php echo $total_items; ?></span>
+				</a>
+				<a href="admin.php?mod=film_requests&filter_status=pending" class="btn btn-sm btn-default btn-raised legitRipple <?php echo $filter_status == 'pending' ? 'active' : ''; ?>">
+					Bekleyen
+				</a>
+				<a href="admin.php?mod=film_requests&filter_status=approved" class="btn btn-sm btn-default btn-raised legitRipple <?php echo $filter_status == 'approved' ? 'active' : ''; ?>">
+					Onaylanan
+				</a>
+				<a href="admin.php?mod=film_requests&filter_status=rejected" class="btn btn-sm btn-default btn-raised legitRipple <?php echo $filter_status == 'rejected' ? 'active' : ''; ?>">
+					Reddedilen
+				</a>
+			</div>
+		</div>
+		<div class="col-sm-6 text-right">
+			<div class="btn-group" role="group">
+				<a href="admin.php?mod=film_requests&filter_type=movie" class="btn btn-sm btn-primary btn-raised legitRipple <?php echo $filter_type == 'movie' ? 'active' : ''; ?>">
+					<i class="fa fa-film"></i> Film
+				</a>
+				<a href="admin.php?mod=film_requests&filter_type=tv" class="btn btn-sm btn-info btn-raised legitRipple <?php echo $filter_type == 'tv' ? 'active' : ''; ?>">
+					<i class="fa fa-tv"></i> Dizi
+				</a>
+			</div>
+		</div>
+	</div>
+
+	<!-- Toplu İşlemler -->
+	<form method="post" action="admin.php?mod=film_requests&subaction=mass_action" id="massActionForm">
+		<div class="panel panel-default">
+			<div class="panel-heading">
+				<div class="row">
+					<div class="col-sm-6">
+						<h3 class="panel-title" style="padding-top: 7px;"><i class="fa fa-list"></i> İstek Listesi</h3>
+					</div>
+					<div class="col-sm-6 text-right">
+						<select name="mass_action" class="form-control input-sm" style="width: 150px; display: inline-block;">
+							<option value="">Toplu İşlem Seç</option>
+							<option value="approve">Onayla</option>
+							<option value="reject">Reddet</option>
+							<option value="delete">Sil</option>
+						</select>
+						<button type="submit" class="btn btn-primary btn-sm btn-raised legitRipple" onclick="return confirm('Seçili isteklere bu işlemi uygulamak istediğinize emin misiniz?')">
+							<i class="fa fa-check"></i> Uygula
+						</button>
+					</div>
+				</div>
+			</div>
+
+			<div class="table-responsive">
+				<table class="table table-bordered table-striped table-hover">
+					<thead>
+						<tr>
+							<th width="30"><input type="checkbox" id="selectAll"></th>
+							<th width="60">Tür</th>
+							<th width="80">Poster</th>
+							<th>Başlık</th>
+							<th width="80">Yıl</th>
+							<th width="80">Puan</th>
+							<th width="120">Ekleyen</th>
+							<th width="140">Tarih</th>
+							<th width="100">Durum</th>
+							<th width="200" class="text-center">İşlemler</th>
+						</tr>
+					</thead>
+					<tbody>
+					<?php
+					$requests_query = $db->query("SELECT * FROM " . PREFIX . "_film_requests" . $where_sql . " ORDER BY added_at DESC LIMIT {$offset}, {$items_per_page}");
+
+					if($db->num_rows($requests_query) > 0) {
+
+						while($req = $db->get_row($requests_query)) {
+
+							$status_class = $req['status'] == 'approved' ? 'success' : ($req['status'] == 'rejected' ? 'danger' : 'warning');
+							$status_text = $req['status'] == 'approved' ? $lang_film_requests['status_approved'] : ($req['status'] == 'rejected' ? $lang_film_requests['status_rejected'] : $lang_film_requests['status_pending']);
+							$type_badge = $req['type'] == 'tv' ? '<span class="label label-info">Dizi</span>' : '<span class="label label-primary">Film</span>';
+
+							$poster_url = $req['poster'] ? 'https://image.tmdb.org/t/p/w92' . $req['poster'] : '';
+
+							$note_icon = !empty($req['admin_note']) ? '<span class="label label-info note-badge" title="' . htmlspecialchars($req['admin_note'], ENT_QUOTES, 'UTF-8') . '"><i class="fa fa-sticky-note"></i></span>' : '';
+
+							echo '<tr>
+								<td><input type="checkbox" name="selected[]" value="' . $req['id'] . '"></td>
+								<td>' . $type_badge . '</td>
+								<td>' . ($poster_url ? '<img src="' . $poster_url . '" alt="' . htmlspecialchars($req['title'], ENT_QUOTES, 'UTF-8') . '" style="max-width:80px; height:auto; border-radius: 4px;">' : '<div style="width:80px;height:120px;background:#f5f5f5;display:flex;align-items:center;justify-content:center;border-radius:4px;"><i class="fa fa-film fa-2x text-muted"></i></div>') . '</td>
+								<td>
+									<strong>' . htmlspecialchars($req['title'], ENT_QUOTES, 'UTF-8') . '</strong> ' . $note_icon . '<br>
+									<small class="text-muted">' . htmlspecialchars($req['original_title'], ENT_QUOTES, 'UTF-8') . '</small>
+								</td>
+								<td>' . $req['year'] . '</td>
+								<td class="text-center">' . ($req['vote_average'] > 0 ? '<span class="label label-warning"><i class="fa fa-star"></i> ' . $req['vote_average'] . '</span>' : '-') . '</td>
+								<td>' . htmlspecialchars($req['username'], ENT_QUOTES, 'UTF-8') . '</td>
+								<td><small>' . date('d.m.Y H:i', $req['added_at']) . '</small></td>
+								<td><span class="label label-' . $status_class . '">' . $status_text . '</span></td>
+								<td class="text-center table-actions">
+									<div class="btn-group btn-group-xs">
+										<a href="https://www.themoviedb.org/' . ($req['type'] == 'tv' ? 'tv' : 'movie') . '/' . $req['tmdb_id'] . '" target="_blank" class="btn btn-info btn-raised legitRipple" title="TMDb\'de Görüntüle">
+											<i class="fa fa-external-link"></i>
+										</a>
+										<a href="admin.php?mod=film_requests&subaction=change_status&id=' . $req['id'] . '&status=approved" class="btn btn-success btn-raised legitRipple" title="Onayla">
+											<i class="fa fa-check"></i>
+										</a>
+										<a href="admin.php?mod=film_requests&subaction=change_status&id=' . $req['id'] . '&status=rejected" class="btn btn-warning btn-raised legitRipple" title="Reddet">
+											<i class="fa fa-times"></i>
+										</a>
+										<button type="button" class="btn btn-default btn-raised legitRipple" onclick="showNoteModal(' . $req['id'] . ', \'' . htmlspecialchars($req['admin_note'], ENT_QUOTES, 'UTF-8') . '\')" title="Not Ekle">
+											<i class="fa fa-sticky-note"></i>
+										</button>
+										<a href="admin.php?mod=film_requests&subaction=delete&id=' . $req['id'] . '" class="btn btn-danger btn-raised legitRipple" title="Sil" onclick="return confirm(\'Bu isteği silmek istediğinize emin misiniz?\')">
+											<i class="fa fa-trash"></i>
+										</a>
+									</div>
+								</td>
+							</tr>';
+						}
+
+					} else {
+						echo '<tr><td colspan="10" class="text-center text-muted" style="padding: 40px;">' . $lang_film_requests['no_requests'] . '</td></tr>';
+					}
+					?>
+					</tbody>
+				</table>
+			</div>
+
+			<?php
+			// Sayfalama
+			if($total_pages > 1) {
+				$filter_params = '';
+				if($filter_status) $filter_params .= '&filter_status=' . $filter_status;
+				if($filter_type) $filter_params .= '&filter_type=' . $filter_type;
+
+				echo '<div class="panel-footer">
+						<ul class="pagination" style="margin: 0;">';
+
+				if($page > 1) {
+					echo '<li><a href="admin.php?mod=film_requests&page=' . ($page - 1) . $filter_params . '">&laquo;</a></li>';
+				}
+
+				$start = max(1, $page - 3);
+				$end = min($total_pages, $page + 3);
+
+				if($start > 1) {
+					echo '<li><a href="admin.php?mod=film_requests&page=1' . $filter_params . '">1</a></li>';
+					if($start > 2) echo '<li class="disabled"><span>...</span></li>';
+				}
+
+				for($i = $start; $i <= $end; $i++) {
+					if($i == $page) {
+						echo '<li class="active"><span>' . $i . '</span></li>';
+					} else {
+						echo '<li><a href="admin.php?mod=film_requests&page=' . $i . $filter_params . '">' . $i . '</a></li>';
+					}
+				}
+
+				if($end < $total_pages) {
+					if($end < $total_pages - 1) echo '<li class="disabled"><span>...</span></li>';
+					echo '<li><a href="admin.php?mod=film_requests&page=' . $total_pages . $filter_params . '">' . $total_pages . '</a></li>';
+				}
+
+				if($page < $total_pages) {
+					echo '<li><a href="admin.php?mod=film_requests&page=' . ($page + 1) . $filter_params . '">&raquo;</a></li>';
+				}
+
+				echo '</ul></div>';
+			}
+			?>
+		</div>
+	</form>
+
+	<!-- Not Modal -->
+	<div class="modal fade" id="noteModal" tabindex="-1" role="dialog">
+		<div class="modal-dialog" role="document">
+			<div class="modal-content">
+				<form method="post" action="admin.php?mod=film_requests&subaction=save_note">
+					<div class="modal-header">
+						<button type="button" class="close" data-dismiss="modal">&times;</button>
+						<h4 class="modal-title"><i class="fa fa-sticky-note"></i> Admin Notu</h4>
+					</div>
+					<div class="modal-body">
+						<input type="hidden" name="request_id" id="noteRequestId">
+						<div class="form-group">
+							<label>Not:</label>
+							<textarea name="admin_note" id="noteText" class="form-control" rows="4" placeholder="Bu istek hakkında not ekleyin..."></textarea>
+						</div>
+					</div>
+					<div class="modal-footer">
+						<button type="button" class="btn btn-default btn-raised legitRipple" data-dismiss="modal">İptal</button>
+						<button type="submit" class="btn btn-primary btn-raised legitRipple"><i class="fa fa-save"></i> Kaydet</button>
+					</div>
+				</form>
+			</div>
+		</div>
+	</div>
+
+	<script>
+	// Tümünü seç
+	document.getElementById('selectAll').addEventListener('change', function() {
+		const checkboxes = document.querySelectorAll('input[name="selected[]"]');
+		checkboxes.forEach(cb => cb.checked = this.checked);
+	});
+
+	// Not modal
+	function showNoteModal(requestId, currentNote) {
+		document.getElementById('noteRequestId').value = requestId;
+		document.getElementById('noteText').value = currentNote;
+		$('#noteModal').modal('show');
+	}
+	</script>
+	<?php
+}
+
+echofooter();
+
+?>
+]]></replacecode>
+			<enabled>1</enabled>
+		</operation>
+	</file>
+</dleplugin>
